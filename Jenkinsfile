@@ -1,71 +1,81 @@
 pipeline {
     agent any
-	tools {
-		maven 'Maven'
-	}
-	
-	environment {
-		PROJECT_ID = 'active-alchemy-459306-v2'
-                CLUSTER_NAME = 'kube-cluster'
-                LOCATION = 'us-central1-c'
-                CREDENTIALS_ID = 'kubernetes'		
-	}
-	
+    tools {
+        maven 'Maven'
+    }
+
+    environment {
+        PROJECT_ID = 'active-alchemy-459306-v2'
+        CLUSTER_NAME = 'kube-cluster'
+        LOCATION = 'us-central1-c'
+        CREDENTIALS_ID = 'kubernetes'
+    }
+
     stages {
-	    stage('Scm Checkout') {
-		    steps {
-			    checkout scm
-		    }
-	    }
-	    
-	    stage('Build') {
-		    steps {
-			    sh 'mvn clean package'
-		    }
-	    }
-	    
-	    stage('Test') {
-		    steps {
-			    echo "Testing..."
-			    sh 'mvn test'
-		    }
-	    }
-	    
-	    stage('Build Docker Image') {
-		    steps {
-			    sh 'whoami'
-			    script {
-				    myimage = docker.build("charan/devops:${env.BUILD_ID}")
-			    }
-		    }
-	    }
-	    
-	    stage("Push Docker Image") {
-		    steps {
-			    script {
-				    echo "Push Docker Image"
-				    withCredentials([string(credentialsId: 'dockerhub', variable: 'dockerhub')]) {
-            				sh "docker login -u chaja6r -p ${dockerhub}"
-				    }
-				        myimage.push("${env.BUILD_ID}")
-				    
-			    }
-		    }
-	    }
-	    
-	    stage('Deploy to K8s') {
-		    steps{
-			    echo "Deployment started ..."
-			    sh 'ls -ltr'
-			    sh 'pwd'
-			    sh "sed -i 's/tagversion/${env.BUILD_ID}/g' serviceLB.yaml"
-				sh "sed -i 's/tagversion/${env.BUILD_ID}/g' deployment.yaml"
-			    echo "Start deployment of serviceLB.yaml"
-			    step([$class: 'KubernetesEngineBuilder', projectId: env.PROJECT_ID, clusterName: env.CLUSTER_NAME, location: env.LOCATION, manifestPattern: 'serviceLB.yaml', credentialsId: env.CREDENTIALS_ID, verifyDeployments: true])
-				echo "Start deployment of deployment.yaml"
-				step([$class: 'KubernetesEngineBuilder', projectId: env.PROJECT_ID, clusterName: env.CLUSTER_NAME, location: env.LOCATION, manifestPattern: 'deployment.yaml', credentialsId: env.CREDENTIALS_ID, verifyDeployments: true])
-			    echo "Deployment Finished ..."
-		    }
-	    }
+        stage('Scm Checkout') {
+            steps {
+                checkout scm
+            }
+        }
+
+        stage('Build') {
+            steps {
+                // Build Parent POM and Child Module
+                sh 'mvn clean install -U -f ../pom.xml' 
+                sh 'mvn clean package -f kubernetes/pom.xml'
+            }
+        }
+
+        stage('Test') {
+            steps {
+                echo "Running Tests..."
+                sh 'mvn test'
+            }
+        }
+
+        stage('Build Docker Image') {
+            steps {
+                script {
+                    myimage = docker.build("charan/devops:${env.BUILD_ID}")
+                }
+            }
+        }
+
+        stage('Push Docker Image') {
+            steps {
+                script {
+                    withCredentials([usernamePassword(credentialsId: 'dockerhub', usernameVariable: 'DOCKER_USER', passwordVariable: 'DOCKER_PASS')]) {
+                        sh "docker login -u ${DOCKER_USER} -p ${DOCKER_PASS}"
+                        myimage.push("${env.BUILD_ID}")
+                        myimage.push("latest")
+                    }
+                }
+            }
+        }
+
+        stage('Deploy to K8s') {
+            steps {
+                script {
+                    def files = ['serviceLB.yaml', 'deployment.yaml']
+                    files.each { file ->
+                        sh "sed -i 's/tagversion/${env.BUILD_ID}/g' ${file}"
+                        step([$class: 'KubernetesEngineBuilder', 
+                              projectId: env.PROJECT_ID, 
+                              clusterName: env.CLUSTER_NAME, 
+                              location: env.LOCATION, 
+                              manifestPattern: file, 
+                              credentialsId: env.CREDENTIALS_ID, 
+                              verifyDeployments: true])
+                    }
+                }
+            }
+        }
+    }
+
+    post {
+        always {
+            echo "Cleaning up Docker images..."
+            sh "docker rmi charan/devops:${env.BUILD_ID} || true"
+        }
     }
 }
