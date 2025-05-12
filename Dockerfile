@@ -1,4 +1,4 @@
-FROM tomcat:9.0.73-jdk11
+FROM tomcat:10.1-jdk17
 
 RUN mkdir /usr/local/tomcat/webapps/myapp
 
