@@ -5,6 +5,7 @@
         <groupId>k8sDemo.devops.gcp</groupId>
         <artifactId>k8sDemo</artifactId>
         <version>1.0-AMIT</version>
+        <relativePath>../pom.xml</relativePath>
     </parent>
 
     <artifactId>kubernetes</artifactId>
