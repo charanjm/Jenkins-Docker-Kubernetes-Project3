@@ -20,9 +20,7 @@ pipeline {
 
         stage('Build') {
             steps {
-                // Build Parent POM and Child Module
-                sh 'mvn clean install -U -f ../pom.xml' 
-                sh 'mvn clean package -f kubernetes/pom.xml'
+                sh 'mvn clean install -U'
             }
         }
 
